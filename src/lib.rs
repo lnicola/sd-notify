@@ -127,11 +127,14 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
     let mut msg = String::new();
     let sock = UnixDatagram::unbound()?;
     for s in state {
-        let _ = write!(msg, "{}", s);
-        msg.push('\n');
+        let _ = write!(msg, "{}\n", s);
     }
-    sock.send_to(msg.as_bytes(), socket_path)?;
-    Ok(())
+    let len = sock.send_to(msg.as_bytes(), socket_path)?;
+    if len != msg.len() {
+        Err(io::Error::new(io::ErrorKind::WriteZero, "incomplete write"))
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]
