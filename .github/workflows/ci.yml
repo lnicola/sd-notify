@@ -13,6 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+
     - name: Checkout
       uses: actions/checkout@v1
 
@@ -30,6 +31,8 @@ jobs:
         command: fetch
 
     - name: Check
+      env:
+        CARGO_INCREMENTAL: 0
       uses: actions-rs/cargo@v1
       with:
         command: check
@@ -42,11 +45,15 @@ jobs:
 
     - name: Clippy
       uses: actions-rs/cargo@v1
+      env:
+        CARGO_INCREMENTAL: 0
       with:
         command: clippy
         arguments: -- -D warnings
 
     - name: Test
       uses: actions-rs/cargo@v1
+      env:
+        CARGO_INCREMENTAL: 0
       with:
         command: test
