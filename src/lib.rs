@@ -127,7 +127,7 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
     let mut msg = String::new();
     let sock = UnixDatagram::unbound()?;
     for s in state {
-        let _ = write!(msg, "{}\n", s);
+        let _ = writeln!(msg, "{}", s);
     }
     let len = sock.send_to(msg.as_bytes(), socket_path)?;
     if len != msg.len() {
