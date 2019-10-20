@@ -14,11 +14,6 @@
 //! [systemd]: https://crates.io/crates/systemd
 //! [libsystemd]: https://crates.io/crates/libsystemd
 //!
-//! The notification mechanism involves sending a datagram to a Unix domain socket.
-//! See [`sd_notify(3)`][sd_notify] for details.
-//!
-//! [sd_notify]: https://www.freedesktop.org/software/systemd/man/sd_notify.html
-//!
 //! # Example
 //!
 //! ```no_run
@@ -101,7 +96,12 @@ pub fn booted() -> io::Result<bool> {
 ///
 /// If the `unset_env` parameter is set, the `NOTIFY_SOCKET` environment variable
 /// will be unset before returning. Further calls to `sd_notify` will fail, but
-/// chlid processes will no longer inherit the variable.
+/// child processes will no longer inherit the variable.
+///
+/// The notification mechanism involves sending a datagram to a Unix domain socket.
+/// See [`sd_notify(3)`][sd_notify] for details.
+///
+/// [sd_notify]: https://www.freedesktop.org/software/systemd/man/sd_notify.html
 ///
 /// # Limitations
 ///
@@ -150,6 +150,10 @@ pub const SD_LISTEN_FDS_START: i32 = 3;
 /// variable. The file descriptor values start from `SD_LISTEN_FDS_START`.
 ///
 /// Before returning, the file descriptors are set as `O_CLOEXEC`.
+///
+/// See [`sd_listen_fds(3)`][sd_listen_fds] for details.
+///
+/// [sd_listen_fds]: https://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
 ///
 /// # Example
 ///
