@@ -30,8 +30,10 @@
 use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
-use std::io;
+use std::io::{self, ErrorKind};
 use std::os::unix::net::UnixDatagram;
+
+mod ffi;
 
 /// Daemon notification for the service manager.
 #[derive(Clone, Debug)]
@@ -131,10 +133,85 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
     }
     let len = sock.send_to(msg.as_bytes(), socket_path)?;
     if len != msg.len() {
-        Err(io::Error::new(io::ErrorKind::WriteZero, "incomplete write"))
+        Err(io::Error::new(ErrorKind::WriteZero, "incomplete write"))
     } else {
         Ok(())
     }
+}
+
+/// Value of the first file descriptor passed for by the service manager for
+/// socket activation.
+pub const SD_LISTEN_FDS_START: i32 = 3;
+
+/// Checks for file descriptors passed by the service manager for socket
+/// activation.
+///
+/// The function returns the value passed in the `LISTEN_FDS` environment
+/// variable. The file descriptor values start from `SD_LISTEN_FDS_START`.
+///
+/// Before returning, the file descriptors are set as `O_CLOEXEC`.
+///
+/// # Example
+///
+/// ```no_run
+/// let _ = sd_notify::listen_fds();
+/// ```
+pub fn listen_fds() -> io::Result<i32> {
+    struct Guard;
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            env::remove_var("LISTEN_PID");
+            env::remove_var("LISTEN_FDS");
+        }
+    }
+
+    let _guard = Guard;
+
+    let listen_pid = if let Ok(pid) = env::var("LISTEN_PID") {
+        pid
+    } else {
+        return Ok(0);
+    }
+    .parse::<i32>()
+    .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_PID"))?;
+
+    if listen_pid != unsafe { ffi::getpid() } {
+        return Ok(0);
+    }
+
+    let listen_fds = if let Ok(fds) = env::var("LISTEN_FDS") {
+        fds
+    } else {
+        return Ok(0);
+    }
+    .parse::<i32>()
+    .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_FDS"))?;
+
+    let last = SD_LISTEN_FDS_START
+        .checked_add(listen_fds)
+        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "fd count overflowed"))?;
+    eprintln!("{}", last);
+    for fd in SD_LISTEN_FDS_START..last {
+        fd_cloexec(fd)?
+    }
+
+    Ok(listen_fds)
+}
+
+fn fd_cloexec(fd: i32) -> io::Result<()> {
+    let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
+    if flags < 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let new_flags = flags | ffi::FD_CLOEXEC;
+    if new_flags != flags {
+        let r = unsafe { ffi::fcntl(fd, ffi::F_SETFD, new_flags) };
+        if r < 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -171,7 +248,7 @@ mod tests {
     }
 
     #[test]
-    fn sd_notify() {
+    fn notify() {
         let s = bind_socket();
 
         super::notify(false, &[NotifyState::Ready]).unwrap();
@@ -192,5 +269,24 @@ mod tests {
             "STATUS=Reticulating splines\nWATCHDOG=1\nX_WORKS=1\n"
         );
         assert!(env::var_os("NOTIFY_SOCKET").is_none());
+    }
+
+    #[test]
+    fn listen_fds() {
+        // We are not testing the success case because `fd_cloexec` would fail.
+
+        assert_eq!(super::listen_fds().unwrap(), 0);
+
+        env::set_var("LISTEN_PID", "1");
+        env::set_var("LISTEN_FDS", "1");
+        assert_eq!(super::listen_fds().unwrap(), 0);
+        assert!(env::var_os("LISTEN_PID").is_none());
+        assert!(env::var_os("LISTEN_FDS").is_none());
+
+        env::set_var("LISTEN_PID", "no way");
+        env::set_var("LISTEN_FDS", "1");
+        assert!(super::listen_fds().is_err());
+        assert!(env::var_os("LISTEN_PID").is_none());
+        assert!(env::var_os("LISTEN_FDS").is_none());
     }
 }
