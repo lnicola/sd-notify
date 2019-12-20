@@ -21,14 +21,19 @@ jobs:
       uses: actions-rs/toolchain@v1
       with:
           toolchain: stable
-
-    - name: Install components
-      run: rustup component add --toolchain stable rustfmt clippy
+          profile: minimal
+          components: rustfmt, clippy
 
     - name: Fetch
       uses: actions-rs/cargo@v1
       with:
         command: fetch
+
+    - name: Format
+      uses: actions-rs/cargo@v1
+      with:
+        command: fmt
+        arguments: -- --check
 
     - name: Check
       env:
@@ -37,11 +42,10 @@ jobs:
       with:
         command: check
 
-    - name: Format
+    - name: Build
       uses: actions-rs/cargo@v1
       with:
-        command: fmt
-        arguments: --all -- --check
+        command: build
 
     - name: Clippy
       uses: actions-rs/cargo@v1
