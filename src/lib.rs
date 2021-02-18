@@ -71,8 +71,8 @@ impl Display for NotifyState {
             NotifyState::MainPid(pid) => write!(f, "MAINPID={}", pid),
             NotifyState::Watchdog => write!(f, "WATCHDOG=1"),
             NotifyState::WatchdogTrigger => write!(f, "WATCHDOG=trigger"),
-            NotifyState::WatchdogUsec(_) => write!(f, "WATCHDOG_USEC={}", 0),
-            NotifyState::ExtendTimeoutUsec(_) => write!(f, "EXTEND_TIMEOUT_USEC={}", 0),
+            NotifyState::WatchdogUsec(usec) => write!(f, "WATCHDOG_USEC={}", usec),
+            NotifyState::ExtendTimeoutUsec(usec) => write!(f, "EXTEND_TIMEOUT_USEC={}", usec),
             NotifyState::Custom(state) => write!(f, "{}", state),
         }
     }
