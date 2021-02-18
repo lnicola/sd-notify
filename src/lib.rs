@@ -177,10 +177,10 @@ pub fn listen_fds() -> io::Result<i32> {
     } else {
         return Ok(0);
     }
-    .parse::<i32>()
+    .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_PID"))?;
 
-    if listen_pid != unsafe { ffi::getpid() } {
+    if listen_pid != std::process::id() {
         return Ok(0);
     }
 

@@ -1,6 +1,5 @@
 extern "C" {
     pub fn fcntl(fd: i32, cmd: i32, ...) -> i32;
-    pub fn getpid() -> i32;
 }
 
 pub const F_GETFD: i32 = 1;
