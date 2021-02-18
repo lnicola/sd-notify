@@ -22,6 +22,7 @@
 //! let _ = sd_notify::notify(true, &[NotifyState::Ready]);
 //! ```
 
+use std::convert::TryInto;
 use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
@@ -42,11 +43,11 @@ pub enum NotifyState {
     /// Free-form status message for the service manager.
     Status(String),
     /// Service has failed with an `errno`-style error code, e.g. `2` for `ENOENT`.
-    Errno(i32),
+    Errno(u32),
     /// Service has failed with a D-Bus-style error code, e.g. `org.freedesktop.DBus.Error.TimedOut`.
     BusError(String),
     /// Main process ID (PID) of the service, in case it wasn't started directly by the service manager.
-    MainPid(i32),
+    MainPid(u32),
     /// Tells the service manager to update the watchdog timestamp.
     Watchdog,
     /// Tells the service manager to trigger a watchdog failure.
@@ -71,8 +72,8 @@ impl Display for NotifyState {
             NotifyState::MainPid(pid) => write!(f, "MAINPID={}", pid),
             NotifyState::Watchdog => write!(f, "WATCHDOG=1"),
             NotifyState::WatchdogTrigger => write!(f, "WATCHDOG=trigger"),
-            NotifyState::WatchdogUsec(_) => write!(f, "WATCHDOG_USEC={}", 0),
-            NotifyState::ExtendTimeoutUsec(_) => write!(f, "EXTEND_TIMEOUT_USEC={}", 0),
+            NotifyState::WatchdogUsec(usec) => write!(f, "WATCHDOG_USEC={}", usec),
+            NotifyState::ExtendTimeoutUsec(usec) => write!(f, "EXTEND_TIMEOUT_USEC={}", usec),
             NotifyState::Custom(state) => write!(f, "{}", state),
         }
     }
@@ -141,7 +142,7 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
 
 /// Value of the first file descriptor passed for by the service manager for
 /// socket activation.
-pub const SD_LISTEN_FDS_START: i32 = 3;
+pub const SD_LISTEN_FDS_START: u32 = 3;
 
 /// Checks for file descriptors passed by the service manager for socket
 /// activation.
@@ -160,7 +161,7 @@ pub const SD_LISTEN_FDS_START: i32 = 3;
 /// ```no_run
 /// let _ = sd_notify::listen_fds();
 /// ```
-pub fn listen_fds() -> io::Result<i32> {
+pub fn listen_fds() -> io::Result<u32> {
     struct Guard;
 
     impl Drop for Guard {
@@ -177,10 +178,10 @@ pub fn listen_fds() -> io::Result<i32> {
     } else {
         return Ok(0);
     }
-    .parse::<i32>()
+    .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_PID"))?;
 
-    if listen_pid != unsafe { ffi::getpid() } {
+    if listen_pid != std::process::id() {
         return Ok(0);
     }
 
@@ -189,13 +190,13 @@ pub fn listen_fds() -> io::Result<i32> {
     } else {
         return Ok(0);
     }
-    .parse::<i32>()
+    .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_FDS"))?;
 
     let last = SD_LISTEN_FDS_START
         .checked_add(listen_fds)
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "fd count overflowed"))?;
-    eprintln!("{}", last);
+
     for fd in SD_LISTEN_FDS_START..last {
         fd_cloexec(fd)?
     }
@@ -203,7 +204,10 @@ pub fn listen_fds() -> io::Result<i32> {
     Ok(listen_fds)
 }
 
-fn fd_cloexec(fd: i32) -> io::Result<()> {
+fn fd_cloexec(fd: u32) -> io::Result<()> {
+    let fd: i32 = fd
+        .try_into()
+        .map_err(|_| std::io::Error::from_raw_os_error(ffi::EBADF))?;
     let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
