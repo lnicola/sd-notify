@@ -28,6 +28,7 @@ use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
 use std::io::{self, ErrorKind};
 use std::os::unix::net::UnixDatagram;
+use std::process;
 
 mod ffi;
 
@@ -181,7 +182,7 @@ pub fn listen_fds() -> io::Result<u32> {
     .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_PID"))?;
 
-    if listen_pid != std::process::id() {
+    if listen_pid != process::id() {
         return Ok(0);
     }
 
@@ -207,7 +208,7 @@ pub fn listen_fds() -> io::Result<u32> {
 fn fd_cloexec(fd: u32) -> io::Result<()> {
     let fd: i32 = fd
         .try_into()
-        .map_err(|_| std::io::Error::from_raw_os_error(ffi::EBADF))?;
+        .map_err(|_| io::Error::from_raw_os_error(ffi::EBADF))?;
     let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
