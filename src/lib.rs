@@ -195,7 +195,7 @@ pub fn listen_fds() -> io::Result<i32> {
     let last = SD_LISTEN_FDS_START
         .checked_add(listen_fds)
         .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "fd count overflowed"))?;
-    eprintln!("{}", last);
+
     for fd in SD_LISTEN_FDS_START..last {
         fd_cloexec(fd)?
     }
