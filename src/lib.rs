@@ -22,6 +22,7 @@
 //! let _ = sd_notify::notify(true, &[NotifyState::Ready]);
 //! ```
 
+use std::convert::TryInto;
 use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
@@ -141,7 +142,7 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
 
 /// Value of the first file descriptor passed for by the service manager for
 /// socket activation.
-pub const SD_LISTEN_FDS_START: i32 = 3;
+pub const SD_LISTEN_FDS_START: u32 = 3;
 
 /// Checks for file descriptors passed by the service manager for socket
 /// activation.
@@ -160,7 +161,7 @@ pub const SD_LISTEN_FDS_START: i32 = 3;
 /// ```no_run
 /// let _ = sd_notify::listen_fds();
 /// ```
-pub fn listen_fds() -> io::Result<i32> {
+pub fn listen_fds() -> io::Result<u32> {
     struct Guard;
 
     impl Drop for Guard {
@@ -189,7 +190,7 @@ pub fn listen_fds() -> io::Result<i32> {
     } else {
         return Ok(0);
     }
-    .parse::<i32>()
+    .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_FDS"))?;
 
     let last = SD_LISTEN_FDS_START
@@ -203,7 +204,10 @@ pub fn listen_fds() -> io::Result<i32> {
     Ok(listen_fds)
 }
 
-fn fd_cloexec(fd: i32) -> io::Result<()> {
+fn fd_cloexec(fd: u32) -> io::Result<()> {
+    let fd: i32 = fd
+        .try_into()
+        .map_err(|_| std::io::Error::from_raw_os_error(ffi::EBADF))?;
     let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
