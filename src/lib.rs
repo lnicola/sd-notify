@@ -42,11 +42,11 @@ pub enum NotifyState {
     /// Free-form status message for the service manager.
     Status(String),
     /// Service has failed with an `errno`-style error code, e.g. `2` for `ENOENT`.
-    Errno(i32),
+    Errno(u32),
     /// Service has failed with a D-Bus-style error code, e.g. `org.freedesktop.DBus.Error.TimedOut`.
     BusError(String),
     /// Main process ID (PID) of the service, in case it wasn't started directly by the service manager.
-    MainPid(i32),
+    MainPid(u32),
     /// Tells the service manager to update the watchdog timestamp.
     Watchdog,
     /// Tells the service manager to trigger a watchdog failure.
