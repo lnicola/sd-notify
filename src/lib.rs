@@ -22,11 +22,12 @@
 //! let _ = sd_notify::notify(true, &[NotifyState::Ready]);
 //! ```
 
-use std::convert::TryInto;
+use std::convert::TryFrom;
 use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
 use std::io::{self, ErrorKind};
+use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixDatagram;
 use std::process;
 
@@ -141,15 +142,12 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
     }
 }
 
-/// Value of the first file descriptor passed for by the service manager for
-/// socket activation.
-pub const SD_LISTEN_FDS_START: u32 = 3;
-
 /// Checks for file descriptors passed by the service manager for socket
 /// activation.
 ///
-/// The function returns the value passed in the `LISTEN_FDS` environment
-/// variable. The file descriptor values start from `SD_LISTEN_FDS_START`.
+/// The function returns an iterator over file descriptors, starting from
+/// `SD_LISTEN_FDS_START`. The number of descriptors is obtained from the
+/// `LISTEN_FDS` environment variable.
 ///
 /// Before returning, the file descriptors are set as `O_CLOEXEC`.
 ///
@@ -160,9 +158,9 @@ pub const SD_LISTEN_FDS_START: u32 = 3;
 /// # Example
 ///
 /// ```no_run
-/// let _ = sd_notify::listen_fds();
+/// let socket = sd_notify::listen_fds().map(|mut fds| fds.next().expect("missing fd"));
 /// ```
-pub fn listen_fds() -> io::Result<u32> {
+pub fn listen_fds() -> io::Result<impl Iterator<Item = RawFd>> {
     struct Guard;
 
     impl Drop for Guard {
@@ -177,38 +175,41 @@ pub fn listen_fds() -> io::Result<u32> {
     let listen_pid = if let Ok(pid) = env::var("LISTEN_PID") {
         pid
     } else {
-        return Ok(0);
+        return Ok(0..0);
     }
     .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_PID"))?;
 
     if listen_pid != process::id() {
-        return Ok(0);
+        return Ok(0..0);
     }
 
     let listen_fds = if let Ok(fds) = env::var("LISTEN_FDS") {
         fds
     } else {
-        return Ok(0);
+        return Ok(0..0);
     }
     .parse::<u32>()
     .map_err(|_| io::Error::new(ErrorKind::InvalidInput, "invalid LISTEN_FDS"))?;
 
+    let overflow = || io::Error::new(ErrorKind::InvalidInput, "fd count overflowed");
+
+    const SD_LISTEN_FDS_START: u32 = 3;
     let last = SD_LISTEN_FDS_START
         .checked_add(listen_fds)
-        .ok_or_else(|| io::Error::new(ErrorKind::InvalidInput, "fd count overflowed"))?;
+        .ok_or_else(overflow)?;
 
     for fd in SD_LISTEN_FDS_START..last {
         fd_cloexec(fd)?
     }
 
+    let last = RawFd::try_from(last).map_err(|_| overflow())?;
+    let listen_fds = SD_LISTEN_FDS_START as RawFd..last;
     Ok(listen_fds)
 }
 
 fn fd_cloexec(fd: u32) -> io::Result<()> {
-    let fd: i32 = fd
-        .try_into()
-        .map_err(|_| io::Error::from_raw_os_error(ffi::EBADF))?;
+    let fd = RawFd::try_from(fd).map_err(|_| io::Error::from_raw_os_error(ffi::EBADF))?;
     let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
@@ -284,11 +285,11 @@ mod tests {
     fn listen_fds() {
         // We are not testing the success case because `fd_cloexec` would fail.
 
-        assert_eq!(super::listen_fds().unwrap(), 0);
+        assert!(super::listen_fds().unwrap().next().is_none());
 
         env::set_var("LISTEN_PID", "1");
         env::set_var("LISTEN_FDS", "1");
-        assert_eq!(super::listen_fds().unwrap(), 0);
+        assert!(super::listen_fds().unwrap().next().is_none());
         assert!(env::var_os("LISTEN_PID").is_none());
         assert!(env::var_os("LISTEN_FDS").is_none());
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- (breaking) `listen_fds` now returns an iterator over `RawFd` values;
+- (breaking) `SD_LISTEN_FDS_START` is gone
+
 ## [0.2.0] - 2021-02-18
 
 ### Changed
