@@ -1,6 +1,6 @@
 [package]
 name = "sd-notify"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Laurențiu Nicola <lnicola@dend.ro>"]
 edition = "2018"
 description = "Lightweight crate for systemd service state notifications"
