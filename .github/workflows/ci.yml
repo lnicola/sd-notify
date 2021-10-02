@@ -6,6 +6,9 @@ on:
     branches:
       - master
 
+env:
+  CARGO_INCREMENTAL: 0
+
 jobs:
   build:
 
@@ -22,6 +25,7 @@ jobs:
       with:
           toolchain: stable
           profile: minimal
+          override: true
           components: rustfmt, clippy
 
     - name: Fetch
@@ -33,11 +37,9 @@ jobs:
       uses: actions-rs/cargo@v1
       with:
         command: fmt
-        arguments: -- --check
+        args: -- --check
 
     - name: Check
-      env:
-        CARGO_INCREMENTAL: 0
       uses: actions-rs/cargo@v1
       with:
         command: check
@@ -49,15 +51,11 @@ jobs:
 
     - name: Clippy
       uses: actions-rs/cargo@v1
-      env:
-        CARGO_INCREMENTAL: 0
       with:
         command: clippy
-        arguments: -- -D warnings
+        args: -- -D warnings
 
     - name: Test
       uses: actions-rs/cargo@v1
-      env:
-        CARGO_INCREMENTAL: 0
       with:
         command: test
