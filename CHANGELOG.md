@@ -5,6 +5,7 @@
 ### Changed
 
 - (breaking) `NotifyState::Status`, `NotifyState::BusError` and `NotifyState::Custom` now contain a `&str` instead of a `String`
+- the crate is now using the 2021 edition
 
 ## [0.3.0] - 2021-02-25
 

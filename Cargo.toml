@@ -1,7 +1,7 @@
 [package]
 name = "sd-notify"
 version = "0.3.0"
-edition = "2018"
+edition = "2021"
 description = "Lightweight crate for systemd service state notifications"
 readme = "README.md"
 keywords = ["systemd", "sd_notify"]
