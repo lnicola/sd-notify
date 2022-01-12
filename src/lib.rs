@@ -35,7 +35,7 @@ mod ffi;
 
 /// Daemon notification for the service manager.
 #[derive(Clone, Debug)]
-pub enum NotifyState {
+pub enum NotifyState<'a> {
     /// Service startup is finished.
     Ready,
     /// Service is reloading its configuration.
@@ -43,11 +43,11 @@ pub enum NotifyState {
     /// Service is stopping.
     Stopping,
     /// Free-form status message for the service manager.
-    Status(String),
+    Status(&'a str),
     /// Service has failed with an `errno`-style error code, e.g. `2` for `ENOENT`.
     Errno(u32),
     /// Service has failed with a D-Bus-style error code, e.g. `org.freedesktop.DBus.Error.TimedOut`.
-    BusError(String),
+    BusError(&'a str),
     /// Main process ID (PID) of the service, in case it wasn't started directly by the service manager.
     MainPid(u32),
     /// Tells the service manager to update the watchdog timestamp.
@@ -59,10 +59,10 @@ pub enum NotifyState {
     /// Tells the service manager to extend the service timeout.
     ExtendTimeoutUsec(u32),
     /// Custom state.
-    Custom(String),
+    Custom(&'a str),
 }
 
-impl Display for NotifyState {
+impl Display for NotifyState<'_> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             NotifyState::Ready => write!(f, "READY=1"),
@@ -268,9 +268,9 @@ mod tests {
         super::notify(
             true,
             &[
-                NotifyState::Status(String::from("Reticulating splines")),
+                NotifyState::Status("Reticulating splines"),
                 NotifyState::Watchdog,
-                NotifyState::Custom(String::from("X_WORKS=1")),
+                NotifyState::Custom("X_WORKS=1"),
             ],
         )
         .unwrap();

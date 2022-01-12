@@ -1,10 +1,16 @@
 # Changelog
 
+## [0.4.0] - 2022-01-12
+
+### Changed
+
+- (breaking) `NotifyState::Status`, `NotifyState::BusError` and `NotifyState::Custom` now contain a `&str` instead of a `String`
+
 ## [0.3.0] - 2021-02-25
 
 ### Changed
 
-- (breaking) `listen_fds` now returns an iterator over `RawFd` values;
+- (breaking) `listen_fds` now returns an iterator over `RawFd` values
 - (breaking) `SD_LISTEN_FDS_START` is gone
 
 ## [0.2.0] - 2021-02-18
