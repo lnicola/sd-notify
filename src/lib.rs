@@ -30,6 +30,7 @@ use std::io::{self, ErrorKind};
 use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixDatagram;
 use std::process;
+use std::str::FromStr;
 
 mod ffi;
 
@@ -224,6 +225,62 @@ fn fd_cloexec(fd: u32) -> io::Result<()> {
     Ok(())
 }
 
+/// Asks the service manager for enabled watchdog.
+///
+/// If the `unset_env` parameter is set, the `WATCHDOG_USEC` and `WATCHDOG_PID` environment variables
+/// will be unset before returning. Further calls to `watchdog_enabled` will fail, but
+/// child processes will no longer inherit the variable.
+///
+/// See [`sd_watchdog_enabled(3)`][sd_watchdog_enabled] for details.
+///
+/// [sd_watchdog_enabled]: https://www.freedesktop.org/software/systemd/man/sd_watchdog_enabled.html
+///
+///
+/// # Example
+///
+/// ```no_run
+/// # use sd_notify;
+/// #
+/// let mut usec = 0;
+/// let enabled = sd_notify::watchdog_enabled(true, &mut usec);
+/// ```
+pub fn watchdog_enabled(unset_env: bool, usec: &mut u64) -> io::Result<bool> {
+    struct Guard {
+        unset_env: bool,
+    }
+
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            if self.unset_env {
+                env::remove_var("WATCHDOG_USEC");
+                env::remove_var("WATCHDOG_PID");
+            }
+        }
+    }
+
+    let _guard = Guard { unset_env };
+
+    let s = env::var_os("WATCHDOG_USEC");
+    let p = env::var_os("WATCHDOG_PID");
+
+    if let Some(t) = s
+        .to_owned()
+        .and_then(|s| s.to_str().and_then(|s| u64::from_str(s).ok()))
+    {
+        if let Some(pid) = p
+            .to_owned()
+            .and_then(|s| s.to_str().and_then(|s| u32::from_str(s).ok()))
+        {
+            if process::id() == pid {
+                *usec = t;
+                return Ok(true);
+            }
+        }
+    }
+
+    return Ok(false);
+}
+
 #[cfg(test)]
 mod tests {
     use super::NotifyState;
@@ -231,6 +288,7 @@ mod tests {
     use std::fs;
     use std::os::unix::net::UnixDatagram;
     use std::path::PathBuf;
+    use std::process;
 
     struct SocketHelper(PathBuf, UnixDatagram);
 
@@ -298,5 +356,50 @@ mod tests {
         assert!(super::listen_fds().is_err());
         assert!(env::var_os("LISTEN_PID").is_none());
         assert!(env::var_os("LISTEN_FDS").is_none());
+    }
+
+    #[test]
+    fn watchdog_enabled() {
+        // test original logic: https://github.com/systemd/systemd/blob/f3376ee8fa28aab3f7edfad1ddfbcceca5bc841c/src/libsystemd/sd-daemon/sd-daemon.c#L632
+
+        // invalid pid and unset env
+        env::set_var("WATCHDOG_USEC", "5");
+        env::set_var("WATCHDOG_PID", "1");
+
+        let mut usec = 0;
+        assert_eq!(super::watchdog_enabled(true, &mut usec).unwrap(), false);
+        assert_eq!(usec, 0 as u64);
+
+        assert!(env::var_os("WATCHDOG_USEC").is_none());
+        assert!(env::var_os("WATCHDOG_PID").is_none());
+
+        // invalid usec and no unset env
+        env::set_var("WATCHDOG_USEC", "invalid-usec");
+        env::set_var("WATCHDOG_PID", process::id().to_string());
+
+        let mut usec = 0;
+        assert_eq!(super::watchdog_enabled(true, &mut usec).unwrap(), false);
+        assert_eq!(usec, 0);
+
+        assert!(env::var_os("WATCHDOG_USEC").is_none());
+        assert!(env::var_os("WATCHDOG_PID").is_none());
+
+        // no usec, no pip no unset env
+        let mut usec = 0;
+        assert_eq!(super::watchdog_enabled(false, &mut usec).unwrap(), false);
+        assert_eq!(usec, 0);
+
+        assert!(env::var_os("WATCHDOG_USEC").is_none());
+        assert!(env::var_os("WATCHDOG_PID").is_none());
+
+        // valid pip
+        env::set_var("WATCHDOG_USEC", "5");
+        env::set_var("WATCHDOG_PID", process::id().to_string());
+
+        let mut usec = 0;
+        assert_eq!(super::watchdog_enabled(false, &mut usec).unwrap(), true);
+        assert_eq!(usec, 5 as u64);
+        assert!(env::var_os("WATCHDOG_USEC").is_some());
+        assert!(env::var_os("WATCHDOG_PID").is_some());
     }
 }
