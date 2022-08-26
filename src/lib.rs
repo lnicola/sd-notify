@@ -263,14 +263,8 @@ pub fn watchdog_enabled(unset_env: bool, usec: &mut u64) -> io::Result<bool> {
     let s = env::var_os("WATCHDOG_USEC");
     let p = env::var_os("WATCHDOG_PID");
 
-    if let Some(t) = s
-        .to_owned()
-        .and_then(|s| s.to_str().and_then(|s| u64::from_str(s).ok()))
-    {
-        if let Some(pid) = p
-            .to_owned()
-            .and_then(|s| s.to_str().and_then(|s| u32::from_str(s).ok()))
-        {
+    if let Some(t) = s.and_then(|s| s.to_str().and_then(|s| u64::from_str(s).ok())) {
+        if let Some(pid) = p.and_then(|s| s.to_str().and_then(|s| u32::from_str(s).ok())) {
             if process::id() == pid {
                 *usec = t;
                 return Ok(true);
@@ -278,7 +272,7 @@ pub fn watchdog_enabled(unset_env: bool, usec: &mut u64) -> io::Result<bool> {
         }
     }
 
-    return Ok(false);
+    Ok(false)
 }
 
 #[cfg(test)]
