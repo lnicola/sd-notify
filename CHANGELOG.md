@@ -1,10 +1,10 @@
 # Changelog
 
-## [0.5.0] - 2022-02-15
+## [0.4.1] - 2022-08-31
 
 ### Changed
 
-- add watchdog_enabled function to provide same functionality like original sd_watchdog_enabled API (https://github.com/systemd/systemd/blob/f3376ee8fa28aab3f7edfad1ddfbcceca5bc841c/src/libsystemd/sd-daemon/sd-daemon.c#L632).
+- added `watchdog_enabled` (similar to [`sd_watchdog_enabled`](https://www.freedesktop.org/software/systemd/man/sd_watchdog_enabled.html))
 
 ## [0.4.0] - 2022-01-12
 
