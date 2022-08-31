@@ -260,19 +260,20 @@ pub fn watchdog_enabled(unset_env: bool, usec: &mut u64) -> bool {
 
     let _guard = Guard { unset_env };
 
-    let s = env::var_os("WATCHDOG_USEC");
-    let p = env::var_os("WATCHDOG_PID");
+    let s = env::var("WATCHDOG_USEC")
+        .ok()
+        .and_then(|s| u64::from_str(&s).ok());
+    let p = env::var("WATCHDOG_PID")
+        .ok()
+        .and_then(|s| u32::from_str(&s).ok());
 
-    if let Some(t) = s.and_then(|s| s.to_str().and_then(|s| u64::from_str(s).ok())) {
-        if let Some(pid) = p.and_then(|s| s.to_str().and_then(|s| u32::from_str(s).ok())) {
-            if process::id() == pid {
-                *usec = t;
-                return true;
-            }
+    match (s, p) {
+        (Some(usec_val), Some(pid)) if pid == process::id() => {
+            *usec = usec_val;
+            true
         }
+        _ => false,
     }
-
-    false
 }
 
 #[cfg(test)]
