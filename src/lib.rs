@@ -27,6 +27,8 @@ use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
 use std::io::{self, ErrorKind};
+#[cfg(feature = "fdstore")]
+use std::os::fd::BorrowedFd;
 use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixDatagram;
 use std::process;
@@ -59,6 +61,9 @@ pub enum NotifyState<'a> {
     WatchdogUsec(u32),
     /// Tells the service manager to extend the service timeout.
     ExtendTimeoutUsec(u32),
+    /// Tells the service manager to store attached file descriptors.
+    #[cfg(feature = "fdstore")]
+    FdStore,
     /// Custom state.
     Custom(&'a str),
 }
@@ -77,6 +82,8 @@ impl Display for NotifyState<'_> {
             NotifyState::WatchdogTrigger => write!(f, "WATCHDOG=trigger"),
             NotifyState::WatchdogUsec(usec) => write!(f, "WATCHDOG_USEC={}", usec),
             NotifyState::ExtendTimeoutUsec(usec) => write!(f, "EXTEND_TIMEOUT_USEC={}", usec),
+            #[cfg(feature = "fdstore")]
+            NotifyState::FdStore => write!(f, "FDSTORE=1"),
             NotifyState::Custom(state) => write!(f, "{}", state),
         }
     }
@@ -110,9 +117,11 @@ pub fn booted() -> io::Result<bool> {
 /// # Limitations
 ///
 /// The implementation of this function is somewhat naive: it doesn't support
-/// sending notifications on behalf of other processes, doesn't pass file
-/// descriptors, doesn't send credentials, and does not increase the send
-/// buffer size. It's still useful, though, in usual situations.
+/// sending notifications on behalf of other processes, doesn't send credentials,
+/// and does not increase the send buffer size. It's still useful, though, in
+/// usual situations.
+///
+/// If you wish to send file descriptors, use the `notify_with_fds` function.
 ///
 /// # Example
 ///
@@ -122,25 +131,92 @@ pub fn booted() -> io::Result<bool> {
 /// let _ = sd_notify::notify(true, &[NotifyState::Ready]);
 /// ```
 pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
-    let socket_path = match env::var_os("NOTIFY_SOCKET") {
-        Some(path) => path,
-        None => return Ok(()),
-    };
-    if unset_env {
-        env::remove_var("NOTIFY_SOCKET");
-    }
-
     let mut msg = String::new();
-    let sock = UnixDatagram::unbound()?;
+    let Some(sock) = connect_notify_socket(unset_env)? else {
+        return Ok(());
+    };
     for s in state {
         let _ = writeln!(msg, "{}", s);
     }
-    let len = sock.send_to(msg.as_bytes(), socket_path)?;
+    let len = sock.send(msg.as_bytes())?;
     if len != msg.len() {
         Err(io::Error::new(ErrorKind::WriteZero, "incomplete write"))
     } else {
         Ok(())
     }
+}
+
+/// Sends the service manager a list of state changes with file descriptors.
+///
+/// If the `unset_env` parameter is set, the `NOTIFY_SOCKET` environment variable
+/// will be unset before returning. Further calls to `sd_notify` will fail, but
+/// child processes will no longer inherit the variable.
+///
+/// The notification mechanism involves sending a datagram to a Unix domain socket.
+/// See [`sd_pid_notify_with_fds(3)`][sd_pid_notify_with_fds] for details.
+///
+/// [sd_pid_notify_with_fds]: https://www.freedesktop.org/software/systemd/man/sd_notify.html
+///
+/// # Limitations
+///
+/// The implementation of this function is somewhat naive: it doesn't support
+/// sending notifications on behalf of other processes, doesn't send credentials,
+/// and does not increase the send buffer size. It's still useful, though, in
+/// usual situations.
+///
+/// # Example
+///
+/// ```no_run
+/// # use sd_notify::NotifyState;
+/// # use std::os::fd::BorrowedFd;
+/// #
+/// # let fd = unsafe { BorrowedFd::borrow_raw(0) };
+/// #
+/// let _ = sd_notify::notify_with_fds(false, &[NotifyState::FdStore], &[fd]);
+/// ```
+#[cfg(feature = "fdstore")]
+pub fn notify_with_fds(
+    unset_env: bool,
+    state: &[NotifyState],
+    fds: &[BorrowedFd<'_>],
+) -> io::Result<()> {
+    use sendfd::SendWithFd;
+
+    let mut msg = String::new();
+    let Some(sock) = connect_notify_socket(unset_env)? else {
+        return Ok(());
+    };
+    for s in state {
+        let _ = writeln!(msg, "{}", s);
+    }
+    let len = sock.send_with_fd(msg.as_bytes(), borrowed_fd_slice(fds))?;
+    if len != msg.len() {
+        Err(io::Error::new(ErrorKind::WriteZero, "incomplete write"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "fdstore")]
+fn borrowed_fd_slice<'a>(s: &'a [BorrowedFd<'_>]) -> &'a [RawFd] {
+    // SAFETY: BorrowedFd is #[repr(transparent)] over RawFd (memory safety)
+    // and implements AsRawFd (lifetime safety).
+    // Required only because sendfd does not have i/o safety traits.
+    unsafe { std::mem::transmute(s) }
+}
+
+fn connect_notify_socket(unset_env: bool) -> io::Result<Option<UnixDatagram>> {
+    let Some(socket_path) = env::var_os("NOTIFY_SOCKET") else {
+        return Ok(None);
+    };
+
+    if unset_env {
+        env::remove_var("NOTIFY_SOCKET");
+    }
+
+    let sock = UnixDatagram::unbound()?;
+    sock.connect(socket_path)?;
+    Ok(Some(sock))
 }
 
 /// Checks for file descriptors passed by the service manager for socket
