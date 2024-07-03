@@ -1,10 +1,10 @@
 # Changelog
 
-## [0.4.2] - 2024-04-22
+## [0.4.2] - 2024-07-03
 
-### Changed
+### Fixed
 
-- `FD_CLOEXEC` bit mask definition fixed. The wrong definition effectively lead to `close-on-exec` flag not being set for all `listen_fds`.
+- fixed `listen_fds` to use the right value of `FD_CLOEXEC`
 
 ## [0.4.1] - 2022-08-31
 
