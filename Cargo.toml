@@ -11,3 +11,9 @@ repository = "https://github.com/lnicola/sd-notify"
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
+
+[features]
+fdstore = ["dep:sendfd"]
+
+[dependencies]
+sendfd = { version = "0.4", optional = true }
