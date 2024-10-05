@@ -581,8 +581,8 @@ mod tests {
         env::set_var("WATCHDOG_PID", "1");
 
         let mut usec = 0;
-        assert_eq!(super::watchdog_enabled(true, &mut usec), false);
-        assert_eq!(usec, 0 as u64);
+        assert!(!super::watchdog_enabled(true, &mut usec));
+        assert_eq!(usec, 0);
 
         assert!(env::var_os("WATCHDOG_USEC").is_none());
         assert!(env::var_os("WATCHDOG_PID").is_none());
@@ -592,7 +592,7 @@ mod tests {
         env::set_var("WATCHDOG_PID", process::id().to_string());
 
         let mut usec = 0;
-        assert_eq!(super::watchdog_enabled(true, &mut usec), false);
+        assert!(!super::watchdog_enabled(true, &mut usec));
         assert_eq!(usec, 0);
 
         assert!(env::var_os("WATCHDOG_USEC").is_none());
@@ -600,7 +600,7 @@ mod tests {
 
         // no usec, no pip no unset env
         let mut usec = 0;
-        assert_eq!(super::watchdog_enabled(false, &mut usec), false);
+        assert!(!super::watchdog_enabled(false, &mut usec));
         assert_eq!(usec, 0);
 
         assert!(env::var_os("WATCHDOG_USEC").is_none());
@@ -611,8 +611,8 @@ mod tests {
         env::set_var("WATCHDOG_PID", process::id().to_string());
 
         let mut usec = 0;
-        assert_eq!(super::watchdog_enabled(false, &mut usec), true);
-        assert_eq!(usec, 5 as u64);
+        assert!(super::watchdog_enabled(false, &mut usec));
+        assert_eq!(usec, 5);
         assert!(env::var_os("WATCHDOG_USEC").is_some());
         assert!(env::var_os("WATCHDOG_PID").is_some());
     }
