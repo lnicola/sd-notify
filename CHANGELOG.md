@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.3] - 2024-10-05
+
+### Added
+
+ - added `notify_with_fds` and `listen_fds_with_names`, for storing and retrieving file descriptors
+
 ## [0.4.2] - 2024-07-03
 
 ### Fixed
