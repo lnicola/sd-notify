@@ -27,6 +27,8 @@ use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
 use std::io::{self, ErrorKind};
+#[cfg(feature = "fdstore")]
+use std::os::fd::BorrowedFd;
 use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixDatagram;
 use std::process;
@@ -59,6 +61,15 @@ pub enum NotifyState<'a> {
     WatchdogUsec(u32),
     /// Tells the service manager to extend the service timeout.
     ExtendTimeoutUsec(u32),
+    /// Tells the service manager to store attached file descriptors.
+    #[cfg(feature = "fdstore")]
+    FdStore,
+    /// Tells the service manager to remove stored file descriptors.
+    #[cfg(feature = "fdstore")]
+    FdStoreRemove,
+    /// Tells the service manager to use this name for the attached file descriptor.
+    #[cfg(feature = "fdstore")]
+    FdName(&'a str),
     /// Custom state.
     Custom(&'a str),
 }
@@ -77,6 +88,12 @@ impl Display for NotifyState<'_> {
             NotifyState::WatchdogTrigger => write!(f, "WATCHDOG=trigger"),
             NotifyState::WatchdogUsec(usec) => write!(f, "WATCHDOG_USEC={}", usec),
             NotifyState::ExtendTimeoutUsec(usec) => write!(f, "EXTEND_TIMEOUT_USEC={}", usec),
+            #[cfg(feature = "fdstore")]
+            NotifyState::FdStore => write!(f, "FDSTORE=1"),
+            #[cfg(feature = "fdstore")]
+            NotifyState::FdStoreRemove => write!(f, "FDSTOREREMOVE=1"),
+            #[cfg(feature = "fdstore")]
+            NotifyState::FdName(name) => write!(f, "FDNAME={}", name),
             NotifyState::Custom(state) => write!(f, "{}", state),
         }
     }
@@ -110,9 +127,11 @@ pub fn booted() -> io::Result<bool> {
 /// # Limitations
 ///
 /// The implementation of this function is somewhat naive: it doesn't support
-/// sending notifications on behalf of other processes, doesn't pass file
-/// descriptors, doesn't send credentials, and does not increase the send
-/// buffer size. It's still useful, though, in usual situations.
+/// sending notifications on behalf of other processes, doesn't send credentials,
+/// and does not increase the send buffer size. It's still useful, though, in
+/// usual situations.
+///
+/// If you wish to send file descriptors, use the `notify_with_fds` function.
 ///
 /// # Example
 ///
@@ -122,25 +141,92 @@ pub fn booted() -> io::Result<bool> {
 /// let _ = sd_notify::notify(true, &[NotifyState::Ready]);
 /// ```
 pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
-    let socket_path = match env::var_os("NOTIFY_SOCKET") {
-        Some(path) => path,
-        None => return Ok(()),
-    };
-    if unset_env {
-        env::remove_var("NOTIFY_SOCKET");
-    }
-
     let mut msg = String::new();
-    let sock = UnixDatagram::unbound()?;
+    let Some(sock) = connect_notify_socket(unset_env)? else {
+        return Ok(());
+    };
     for s in state {
         let _ = writeln!(msg, "{}", s);
     }
-    let len = sock.send_to(msg.as_bytes(), socket_path)?;
+    let len = sock.send(msg.as_bytes())?;
     if len != msg.len() {
         Err(io::Error::new(ErrorKind::WriteZero, "incomplete write"))
     } else {
         Ok(())
     }
+}
+
+/// Sends the service manager a list of state changes with file descriptors.
+///
+/// If the `unset_env` parameter is set, the `NOTIFY_SOCKET` environment variable
+/// will be unset before returning. Further calls to `sd_notify` will fail, but
+/// child processes will no longer inherit the variable.
+///
+/// The notification mechanism involves sending a datagram to a Unix domain socket.
+/// See [`sd_pid_notify_with_fds(3)`][sd_pid_notify_with_fds] for details.
+///
+/// [sd_pid_notify_with_fds]: https://www.freedesktop.org/software/systemd/man/sd_notify.html
+///
+/// # Limitations
+///
+/// The implementation of this function is somewhat naive: it doesn't support
+/// sending notifications on behalf of other processes, doesn't send credentials,
+/// and does not increase the send buffer size. It's still useful, though, in
+/// usual situations.
+///
+/// # Example
+///
+/// ```no_run
+/// # use sd_notify::NotifyState;
+/// # use std::os::fd::BorrowedFd;
+/// #
+/// # let fd = unsafe { BorrowedFd::borrow_raw(0) };
+/// #
+/// let _ = sd_notify::notify_with_fds(false, &[NotifyState::FdStore], &[fd]);
+/// ```
+#[cfg(feature = "fdstore")]
+pub fn notify_with_fds(
+    unset_env: bool,
+    state: &[NotifyState],
+    fds: &[BorrowedFd<'_>],
+) -> io::Result<()> {
+    use sendfd::SendWithFd;
+
+    let mut msg = String::new();
+    let Some(sock) = connect_notify_socket(unset_env)? else {
+        return Ok(());
+    };
+    for s in state {
+        let _ = writeln!(msg, "{}", s);
+    }
+    let len = sock.send_with_fd(msg.as_bytes(), borrowed_fd_slice(fds))?;
+    if len != msg.len() {
+        Err(io::Error::new(ErrorKind::WriteZero, "incomplete write"))
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "fdstore")]
+fn borrowed_fd_slice<'a>(s: &'a [BorrowedFd<'_>]) -> &'a [RawFd] {
+    // SAFETY: BorrowedFd is #[repr(transparent)] over RawFd (memory safety)
+    // and implements AsRawFd (lifetime safety).
+    // Required only because sendfd does not have i/o safety traits.
+    unsafe { std::mem::transmute(s) }
+}
+
+fn connect_notify_socket(unset_env: bool) -> io::Result<Option<UnixDatagram>> {
+    let Some(socket_path) = env::var_os("NOTIFY_SOCKET") else {
+        return Ok(None);
+    };
+
+    if unset_env {
+        env::remove_var("NOTIFY_SOCKET");
+    }
+
+    let sock = UnixDatagram::unbound()?;
+    sock.connect(socket_path)?;
+    Ok(Some(sock))
 }
 
 /// Checks for file descriptors passed by the service manager for socket
@@ -162,16 +248,18 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
 /// let socket = sd_notify::listen_fds().map(|mut fds| fds.next().expect("missing fd"));
 /// ```
 pub fn listen_fds() -> io::Result<impl Iterator<Item = RawFd>> {
-    struct Guard;
+    listen_fds_internal(true)
+}
 
-    impl Drop for Guard {
-        fn drop(&mut self) {
-            env::remove_var("LISTEN_PID");
-            env::remove_var("LISTEN_FDS");
-        }
-    }
-
-    let _guard = Guard;
+fn listen_fds_internal(unset_env: bool) -> io::Result<impl ExactSizeIterator<Item = RawFd>> {
+    let _guard1 = UnsetEnvGuard {
+        name: "LISTEN_PID",
+        unset_env,
+    };
+    let _guard2 = UnsetEnvGuard {
+        name: "LISTEN_FDS",
+        unset_env,
+    };
 
     let listen_pid = if let Ok(pid) = env::var("LISTEN_PID") {
         pid
@@ -207,6 +295,87 @@ pub fn listen_fds() -> io::Result<impl Iterator<Item = RawFd>> {
     let last = RawFd::try_from(last).map_err(|_| overflow())?;
     let listen_fds = SD_LISTEN_FDS_START as RawFd..last;
     Ok(listen_fds)
+}
+
+/// Checks for file descriptors passed by the service manager for socket
+/// activation.
+///
+/// The function returns an iterator over file descriptors, starting from
+/// `SD_LISTEN_FDS_START`. The number of descriptors is obtained from the
+/// `LISTEN_FDS` environment variable.
+///
+/// If the `unset_env` parameter is set, the `LISTEN_PID`, `LISTEN_FDS` and
+/// `LISTEN_FDNAMES` environment variable will be unset before returning.
+/// Child processes will not see the fdnames passed to this process. This is
+/// usually not necessary, as a process should only use the `LISTEN_FDS`
+/// variable if it is the PID given in `LISTEN_PID`.
+///
+/// Before returning, the file descriptors are set as `O_CLOEXEC`.
+///
+/// See [`sd_listen_fds_with_names(3)`][sd_listen_fds_with_names] for details.
+///
+/// [sd_listen_fds_with_names]: https://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
+///
+/// # Example
+///
+/// ```no_run
+/// let socket = sd_notify::listen_fds().map(|mut fds| fds.next().expect("missing fd"));
+/// ```
+pub fn listen_fds_with_names(
+    unset_env: bool,
+) -> io::Result<impl ExactSizeIterator<Item = (RawFd, String)>> {
+    let listen_fds = listen_fds_internal(unset_env)?;
+    let _guard = UnsetEnvGuard {
+        name: "LISTEN_FDNAMES",
+        unset_env,
+    };
+    zip_fds_with_names(listen_fds, env::var("LISTEN_FDNAMES").ok())
+}
+
+/// Internal helper that is independent of listen_fds function, for testing purposes.
+fn zip_fds_with_names(
+    listen_fds: impl ExactSizeIterator<Item = RawFd>,
+    listen_fdnames: Option<String>,
+) -> io::Result<impl ExactSizeIterator<Item = (RawFd, String)>> {
+    let listen_fdnames = if let Some(names) = listen_fdnames {
+        // systemd shouldn't provide an empty fdname element. However if it does, the
+        // sd_listen_fds_with_names function will return an empty string for that fd,
+        // as in the following C example:
+        //
+        // void main() {
+        //  char **names;
+        //  setenv("LISTEN_FDNAMES", "x::z", 1);
+        //  int n = sd_listen_fds_with_names(0, &names);
+        //  assert(*names[1] == 0);
+        // }
+        names.split(':').map(|x| x.to_owned()).collect::<Vec<_>>()
+    } else {
+        let mut names = vec![];
+        names.resize(listen_fds.len(), "unknown".to_string());
+        names
+    };
+
+    if listen_fdnames.len() == listen_fds.len() {
+        Ok(listen_fds.zip(listen_fdnames))
+    } else {
+        Err(io::Error::new(
+            ErrorKind::InvalidInput,
+            "invalid LISTEN_FDNAMES",
+        ))
+    }
+}
+
+struct UnsetEnvGuard {
+    name: &'static str,
+    unset_env: bool,
+}
+
+impl Drop for UnsetEnvGuard {
+    fn drop(&mut self) {
+        if self.unset_env {
+            env::remove_var(self.name);
+        }
+    }
 }
 
 fn fd_cloexec(fd: u32) -> io::Result<()> {
@@ -281,6 +450,7 @@ mod tests {
     use super::NotifyState;
     use std::env;
     use std::fs;
+    use std::os::fd::RawFd;
     use std::os::unix::net::UnixDatagram;
     use std::path::PathBuf;
     use std::process;
@@ -351,6 +521,55 @@ mod tests {
         assert!(super::listen_fds().is_err());
         assert!(env::var_os("LISTEN_PID").is_none());
         assert!(env::var_os("LISTEN_FDS").is_none());
+    }
+
+    #[test]
+    fn listen_fds_with_names() {
+        assert_eq!(
+            super::zip_fds_with_names(3 as RawFd..4 as RawFd, Some("omelette".to_string()))
+                .unwrap()
+                .collect::<Vec<_>>(),
+            vec![(3 as RawFd, "omelette".to_string())]
+        );
+
+        assert_eq!(
+            super::zip_fds_with_names(
+                3 as RawFd..5 as RawFd,
+                Some("omelette:baguette".to_string())
+            )
+            .unwrap()
+            .collect::<Vec<_>>(),
+            vec![
+                (3 as RawFd, "omelette".to_string()),
+                (4 as RawFd, "baguette".to_string())
+            ]
+        );
+
+        // LISTEN_FDNAMES is cleared
+        assert_eq!(
+            super::zip_fds_with_names(3 as RawFd..4 as RawFd, None)
+                .unwrap()
+                .next(),
+            Some((3 as RawFd, "unknown".to_string()))
+        );
+
+        // LISTEN_FDNAMES is cleared, every fd should have the name "unknown"
+        assert_eq!(
+            super::zip_fds_with_names(3 as RawFd..5 as RawFd, None)
+                .unwrap()
+                .collect::<Vec<_>>(),
+            vec![
+                (3 as RawFd, "unknown".to_string()),
+                (4 as RawFd, "unknown".to_string())
+            ],
+        );
+
+        // Raise an error if LISTEN_FDNAMES has a different number of entries as fds
+        assert!(super::zip_fds_with_names(
+            3 as RawFd..6 as RawFd,
+            Some("omelette:baguette".to_string())
+        )
+        .is_err());
     }
 
     #[test]
