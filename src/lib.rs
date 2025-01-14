@@ -27,6 +27,7 @@ use std::env;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
 use std::io::{self, ErrorKind};
+use std::mem::MaybeUninit;
 #[cfg(feature = "fdstore")]
 use std::os::fd::BorrowedFd;
 use std::os::unix::io::RawFd;
@@ -34,7 +35,7 @@ use std::os::unix::net::UnixDatagram;
 use std::process;
 use std::str::FromStr;
 
-mod ffi;
+use libc::CLOCK_MONOTONIC;
 
 /// Daemon notification for the service manager.
 #[derive(Clone, Debug)]
@@ -42,6 +43,10 @@ pub enum NotifyState<'a> {
     /// Service startup is finished.
     Ready,
     /// Service is reloading its configuration.
+    ///
+    /// On systemd v253 and newer, this message MUST be followed by a
+    /// [`NotifyState::MonotonicUsec`] notification, or the reload will fail
+    /// and the service will be terminated.
     Reloading,
     /// Service is stopping.
     Stopping,
@@ -70,6 +75,9 @@ pub enum NotifyState<'a> {
     /// Tells the service manager to use this name for the attached file descriptor.
     #[cfg(feature = "fdstore")]
     FdName(&'a str),
+    /// Notify systemd of the current monotonic time in microseconds.
+    /// You can construct this value by calling [`NotifyState::monotonic_usec_now()`].
+    MonotonicUsec(i128),
     /// Custom state.
     Custom(&'a str),
 }
@@ -94,8 +102,24 @@ impl Display for NotifyState<'_> {
             NotifyState::FdStoreRemove => write!(f, "FDSTOREREMOVE=1"),
             #[cfg(feature = "fdstore")]
             NotifyState::FdName(name) => write!(f, "FDNAME={}", name),
+            NotifyState::MonotonicUsec(usec) => write!(f, "MONOTONIC_USEC={}", usec),
             NotifyState::Custom(state) => write!(f, "{}", state),
         }
+    }
+}
+
+impl NotifyState<'_> {
+    /// Create a new [`NotifyState::MonotonicUsec`] using the current system monotonic time.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use sd_notify::NotifyState;
+    /// #
+    /// let _ = NotifyState::monotonic_usec_now().expect("Failed to read monotonic time");
+    /// ```
+    pub fn monotonic_usec_now() -> io::Result<Self> {
+        monotonic_time_usec().map(NotifyState::MonotonicUsec)
     }
 }
 
@@ -379,14 +403,14 @@ impl Drop for UnsetEnvGuard {
 }
 
 fn fd_cloexec(fd: u32) -> io::Result<()> {
-    let fd = RawFd::try_from(fd).map_err(|_| io::Error::from_raw_os_error(ffi::EBADF))?;
-    let flags = unsafe { ffi::fcntl(fd, ffi::F_GETFD, 0) };
+    let fd = RawFd::try_from(fd).map_err(|_| io::Error::from_raw_os_error(libc::EBADF))?;
+    let flags = unsafe { libc::fcntl(fd, libc::F_GETFD, 0) };
     if flags < 0 {
         return Err(io::Error::last_os_error());
     }
-    let new_flags = flags | ffi::FD_CLOEXEC;
+    let new_flags = flags | libc::FD_CLOEXEC;
     if new_flags != flags {
-        let r = unsafe { ffi::fcntl(fd, ffi::F_SETFD, new_flags) };
+        let r = unsafe { libc::fcntl(fd, libc::F_SETFD, new_flags) };
         if r < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -445,6 +469,21 @@ pub fn watchdog_enabled(unset_env: bool, usec: &mut u64) -> bool {
     }
 }
 
+fn monotonic_time_usec() -> io::Result<i128> {
+    let mut timespec = MaybeUninit::uninit();
+    let rv = unsafe { libc::clock_gettime(CLOCK_MONOTONIC, timespec.as_mut_ptr()) };
+    if rv != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let timespec = unsafe { timespec.assume_init() };
+
+    // nanoseconds / 1_000 -> microseconds.
+    let lower_msec = (timespec.tv_nsec / 1_000) as i128;
+    // seconds * 1_000_000 -> microseconds
+    let upper_msec = (timespec.tv_sec * 1_000_000) as i128;
+    Ok(upper_msec + lower_msec)
+}
+
 #[cfg(test)]
 mod tests {
     use super::NotifyState;
@@ -488,14 +527,11 @@ mod tests {
         assert_eq!(s.recv_string(), "READY=1\n");
         assert!(env::var_os("NOTIFY_SOCKET").is_some());
 
-        super::notify(
-            true,
-            &[
-                NotifyState::Status("Reticulating splines"),
-                NotifyState::Watchdog,
-                NotifyState::Custom("X_WORKS=1"),
-            ],
-        )
+        super::notify(true, &[
+            NotifyState::Status("Reticulating splines"),
+            NotifyState::Watchdog,
+            NotifyState::Custom("X_WORKS=1"),
+        ])
         .unwrap();
         assert_eq!(
             s.recv_string(),
@@ -565,11 +601,13 @@ mod tests {
         );
 
         // Raise an error if LISTEN_FDNAMES has a different number of entries as fds
-        assert!(super::zip_fds_with_names(
-            3 as RawFd..6 as RawFd,
-            Some("omelette:baguette".to_string())
-        )
-        .is_err());
+        assert!(
+            super::zip_fds_with_names(
+                3 as RawFd..6 as RawFd,
+                Some("omelette:baguette".to_string())
+            )
+            .is_err()
+        );
     }
 
     #[test]

@@ -9,7 +9,7 @@
 [API docs]: https://docs.rs/sd-notify/badge.svg
 [docs.rs]: https://docs.rs/sd-notify/
 
-A lightweight (no dependencies) crate for sending `systemd` service state notifications.
+A lightweight crate for sending `systemd` service state notifications.
 
 ## Quick start
 
