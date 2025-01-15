@@ -19,7 +19,7 @@
 //! ```no_run
 //! # use sd_notify::NotifyState;
 //! #
-//! let _ = sd_notify::notify(true, &[NotifyState::Ready]);
+//! let _ = sd_notify::notify(false, &[NotifyState::Ready]);
 //! ```
 
 use std::convert::TryFrom;
@@ -139,6 +139,7 @@ pub fn booted() -> io::Result<bool> {
 
 /// Sends the service manager a list of state changes.
 ///
+/// The `unset_env` parameter should generally not be set, see the Safety section.
 /// If the `unset_env` parameter is set, the `NOTIFY_SOCKET` environment variable
 /// will be unset before returning. Further calls to `sd_notify` will fail, but
 /// child processes will no longer inherit the variable.
@@ -157,12 +158,18 @@ pub fn booted() -> io::Result<bool> {
 ///
 /// If you wish to send file descriptors, use the `notify_with_fds` function.
 ///
+/// # Safety
+///
+/// Although this function is not marked as `unsafe`, it is `unsafe` to call
+/// with `unset_env` set to true. See the documentation on
+/// [std::env::remove_var] for further information on this unsafety.
+///
 /// # Example
 ///
 /// ```no_run
 /// # use sd_notify::NotifyState;
 /// #
-/// let _ = sd_notify::notify(true, &[NotifyState::Ready]);
+/// let _ = sd_notify::notify(false, &[NotifyState::Ready]);
 /// ```
 pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
     let mut msg = String::new();
@@ -182,6 +189,7 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
 
 /// Sends the service manager a list of state changes with file descriptors.
 ///
+/// The `unset_env` parameter should generally not be set, see the Safety section.
 /// If the `unset_env` parameter is set, the `NOTIFY_SOCKET` environment variable
 /// will be unset before returning. Further calls to `sd_notify` will fail, but
 /// child processes will no longer inherit the variable.
@@ -197,6 +205,12 @@ pub fn notify(unset_env: bool, state: &[NotifyState]) -> io::Result<()> {
 /// sending notifications on behalf of other processes, doesn't send credentials,
 /// and does not increase the send buffer size. It's still useful, though, in
 /// usual situations.
+///
+/// # Safety
+///
+/// Although this function is not marked as `unsafe`, it is `unsafe` to call
+/// with `unset_env` set to true. See the documentation on
+/// [std::env::remove_var] for further information on this unsafety.
 ///
 /// # Example
 ///
@@ -328,6 +342,7 @@ fn listen_fds_internal(unset_env: bool) -> io::Result<impl ExactSizeIterator<Ite
 /// `SD_LISTEN_FDS_START`. The number of descriptors is obtained from the
 /// `LISTEN_FDS` environment variable.
 ///
+/// The `unset_env` parameter should generally not be set, see the Safety section.
 /// If the `unset_env` parameter is set, the `LISTEN_PID`, `LISTEN_FDS` and
 /// `LISTEN_FDNAMES` environment variable will be unset before returning.
 /// Child processes will not see the fdnames passed to this process. This is
@@ -339,6 +354,12 @@ fn listen_fds_internal(unset_env: bool) -> io::Result<impl ExactSizeIterator<Ite
 /// See [`sd_listen_fds_with_names(3)`][sd_listen_fds_with_names] for details.
 ///
 /// [sd_listen_fds_with_names]: https://www.freedesktop.org/software/systemd/man/sd_listen_fds.html
+///
+/// # Safety
+///
+/// Although this function is not marked as `unsafe`, it is `unsafe` to call
+/// with `unset_env` set to true. See the documentation on
+/// [std::env::remove_var] for further information on this unsafety.
 ///
 /// # Example
 ///
@@ -420,6 +441,7 @@ fn fd_cloexec(fd: u32) -> io::Result<()> {
 
 /// Asks the service manager for enabled watchdog.
 ///
+/// The `unset_env` parameter should generally not be set, see the Safety section.
 /// If the `unset_env` parameter is set, the `WATCHDOG_USEC` and `WATCHDOG_PID` environment variables
 /// will be unset before returning. Further calls to `watchdog_enabled` will fail, but
 /// child processes will no longer inherit the variable.
@@ -428,6 +450,11 @@ fn fd_cloexec(fd: u32) -> io::Result<()> {
 ///
 /// [sd_watchdog_enabled]: https://www.freedesktop.org/software/systemd/man/sd_watchdog_enabled.html
 ///
+/// # Safety
+///
+/// Although this function is not marked as `unsafe`, it is `unsafe` to call
+/// with `unset_env` set to true. See the documentation on
+/// [std::env::remove_var] for further information on this unsafety.
 ///
 /// # Example
 ///
