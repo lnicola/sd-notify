@@ -34,6 +34,7 @@ use std::os::unix::io::RawFd;
 use std::os::unix::net::UnixDatagram;
 use std::process;
 use std::str::FromStr;
+use std::time::Duration;
 
 use libc::CLOCK_MONOTONIC;
 
@@ -472,10 +473,13 @@ fn fd_cloexec(fd: u32) -> io::Result<()> {
 /// ```no_run
 /// # use sd_notify;
 /// #
-/// let mut usec = 0;
-/// let enabled = sd_notify::watchdog_enabled(&mut usec);
+/// if let Some(duration) = sd_notify::watchdog_enabled() {
+///     // watchdog enabled with `duration`
+/// } else {
+///     // watchdog disabled
+/// }
 /// ```
-pub fn watchdog_enabled(usec: &mut u64) -> bool {
+pub fn watchdog_enabled() -> Option<Duration> {
     let s = env::var(WATCHDOG_USEC)
         .ok()
         .and_then(|s| u64::from_str(&s).ok());
@@ -485,10 +489,9 @@ pub fn watchdog_enabled(usec: &mut u64) -> bool {
 
     match (s, p) {
         (Some(usec_val), Some(pid)) if pid == process::id() => {
-            *usec = usec_val;
-            true
+            Some(Duration::from_micros(usec_val))
         }
-        _ => false,
+        _ => None,
     }
 }
 
@@ -504,8 +507,8 @@ pub fn watchdog_enabled(usec: &mut u64) -> bool {
 /// preconditions. See its safety documentation for more details. It can only
 /// be safely called before threads are spawned, in particular before any
 /// `tokio` runtime initialization or `#[tokio::main]`.
-pub unsafe fn watchdog_enabled_and_unset_env(usec: &mut u64) -> bool {
-    let result = watchdog_enabled(usec);
+pub unsafe fn watchdog_enabled_and_unset_env() -> Option<Duration> {
+    let result = watchdog_enabled();
     unsafe {
         env::remove_var(WATCHDOG_USEC);
         env::remove_var(WATCHDOG_PID);
