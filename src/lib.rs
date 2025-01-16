@@ -527,11 +527,14 @@ mod tests {
         assert_eq!(s.recv_string(), "READY=1\n");
         assert!(env::var_os("NOTIFY_SOCKET").is_some());
 
-        super::notify(true, &[
-            NotifyState::Status("Reticulating splines"),
-            NotifyState::Watchdog,
-            NotifyState::Custom("X_WORKS=1"),
-        ])
+        super::notify(
+            true,
+            &[
+                NotifyState::Status("Reticulating splines"),
+                NotifyState::Watchdog,
+                NotifyState::Custom("X_WORKS=1"),
+            ],
+        )
         .unwrap();
         assert_eq!(
             s.recv_string(),
@@ -601,13 +604,11 @@ mod tests {
         );
 
         // Raise an error if LISTEN_FDNAMES has a different number of entries as fds
-        assert!(
-            super::zip_fds_with_names(
-                3 as RawFd..6 as RawFd,
-                Some("omelette:baguette".to_string())
-            )
-            .is_err()
-        );
+        assert!(super::zip_fds_with_names(
+            3 as RawFd..6 as RawFd,
+            Some("omelette:baguette".to_string())
+        )
+        .is_err());
     }
 
     #[test]
