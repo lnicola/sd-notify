@@ -233,10 +233,12 @@ pub fn notify_with_fds(
 
 #[cfg(feature = "fdstore")]
 fn borrowed_fd_slice<'a>(s: &'a [BorrowedFd<'_>]) -> &'a [RawFd] {
+    use std::slice;
+
     // SAFETY: BorrowedFd is #[repr(transparent)] over RawFd (memory safety)
     // and implements AsRawFd (lifetime safety).
     // Required only because sendfd does not have i/o safety traits.
-    unsafe { std::mem::transmute(s) }
+    unsafe { slice::from_raw_parts(s.as_ptr() as *const RawFd, s.len()) }
 }
 
 fn connect_notify_socket(unset_env: bool) -> io::Result<Option<UnixDatagram>> {
