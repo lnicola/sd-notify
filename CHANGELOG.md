@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.4] - 2025-01-16
+
+### Added
+
+ - added `NotifyState::MonotonicUsec`, for use with `Type=notify-reload`
+
 ## [0.4.3] - 2024-10-05
 
 ### Added
