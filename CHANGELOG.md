@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.4.5] - 2025-01-18
+
+### Fixed
+
+ - fixed a dubious transmute between different slice types
+
 ## [0.4.4] - 2025-01-16
 
 ### Added
@@ -60,4 +66,4 @@
 
 ### Added
 
-- Initial release
+- initial release
