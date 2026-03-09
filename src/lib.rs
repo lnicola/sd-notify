@@ -132,9 +132,9 @@ impl NotifyState<'_> {
 ///
 /// ```no_run
 /// match sd_notify::booted() {
-///     Ok(true) => { println!("System is booted under systemd")},
-///     Ok(false) => { println!("System is not booted under systemd")},
-///     Err(e) => { println!("Error: {}", e)},
+///     Ok(true) => { println!("System is booted under systemd") },
+///     Ok(false) => { println!("System is not booted under systemd") },
+///     Err(e) => { println!("Error: {}", e) },
 /// }
 /// ```
 pub fn booted() -> io::Result<bool> {
