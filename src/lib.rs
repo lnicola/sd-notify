@@ -131,11 +131,18 @@ impl NotifyState<'_> {
 /// # Example
 ///
 /// ```no_run
-/// let _ = sd_notify::booted();
+/// match sd_notify::booted() {
+///     Ok(true) => { println!("System is booted under systemd")},
+///     Ok(false) => { println!("System is not booted under systemd")},
+///     Err(e) => { println!("Error: {}", e)},
+/// }
 /// ```
 pub fn booted() -> io::Result<bool> {
-    let m = fs::symlink_metadata("/run/systemd/system")?;
-    Ok(m.is_dir())
+    match fs::symlink_metadata("/run/systemd/system") {
+        Ok(m) => Ok(m.is_dir()),
+        Err(e) if matches!(e.kind(), ErrorKind::NotFound) => Ok(false),
+        Err(e) => Err(e),
+    }
 }
 
 // Constants for env variable names so that we don't typo them.

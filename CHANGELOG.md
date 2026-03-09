@@ -9,6 +9,8 @@
  - the MSRV is now defined as 1.82
 
  ### Fixed
+
+ - fixed `booted` to return `Ok(false)` when not running under systemd
  - fixed `watchdog_enabled` to handle missing `WATCHDOG_PID`
 
 ## [0.4.5] - 2025-01-18
