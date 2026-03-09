@@ -35,13 +35,28 @@ fn watchdog_enabled() {
     assert!(env::var_os("WATCHDOG_USEC").is_none());
     assert!(env::var_os("WATCHDOG_PID").is_none());
 
-    // no usec, no pip no unset env
+    // valid usec, no pid
+    unsafe {
+        env::set_var("WATCHDOG_USEC", "10");
+    }
+
+    unsafe {
+        assert_eq!(
+            sd_notify::watchdog_enabled_and_unset_env(),
+            Some(Duration::from_micros(10))
+        );
+    }
+
+    assert!(env::var_os("WATCHDOG_USEC").is_none());
+    assert!(env::var_os("WATCHDOG_PID").is_none());
+
+    // no usec, no pid, no unset env
     assert_eq!(sd_notify::watchdog_enabled(), None);
 
     assert!(env::var_os("WATCHDOG_USEC").is_none());
     assert!(env::var_os("WATCHDOG_PID").is_none());
 
-    // valid pip
+    // valid pid
     unsafe {
         env::set_var("WATCHDOG_USEC", "5");
         env::set_var("WATCHDOG_PID", process::id().to_string());

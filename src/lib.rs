@@ -486,13 +486,8 @@ pub fn watchdog_enabled() -> Option<Duration> {
     let p = env::var(WATCHDOG_PID)
         .ok()
         .and_then(|s| u32::from_str(&s).ok());
-
-    match (s, p) {
-        (Some(usec_val), Some(pid)) if pid == process::id() => {
-            Some(Duration::from_micros(usec_val))
-        }
-        _ => None,
-    }
+    s.filter(|_| p.is_none_or(|pid| pid == process::id()))
+        .map(Duration::from_micros)
 }
 
 /// Asks the service manager for enabled watchdog.
