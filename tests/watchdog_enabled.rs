@@ -47,7 +47,10 @@ fn watchdog_enabled() {
         env::set_var("WATCHDOG_PID", process::id().to_string());
     }
 
-    assert_eq!(sd_notify::watchdog_enabled(), Some(Duration::from_micros(5)));
+    assert_eq!(
+        sd_notify::watchdog_enabled(),
+        Some(Duration::from_micros(5))
+    );
     assert!(env::var_os("WATCHDOG_USEC").is_some());
     assert!(env::var_os("WATCHDOG_PID").is_some());
 }

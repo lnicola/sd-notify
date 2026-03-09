@@ -41,13 +41,11 @@ fn notify() {
     assert!(env::var_os("NOTIFY_SOCKET").is_some());
 
     unsafe {
-        sd_notify::notify_and_unset_env(
-            &[
-                NotifyState::Status("Reticulating splines"),
-                NotifyState::Watchdog,
-                NotifyState::Custom("X_WORKS=1"),
-            ],
-        )
+        sd_notify::notify_and_unset_env(&[
+            NotifyState::Status("Reticulating splines"),
+            NotifyState::Watchdog,
+            NotifyState::Custom("X_WORKS=1"),
+        ])
         .unwrap();
     }
     assert_eq!(
