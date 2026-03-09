@@ -23,9 +23,9 @@
 
 use std::convert::TryFrom;
 use std::env;
+use std::ffi::OsStr;
 use std::fmt::{self, Display, Formatter, Write};
 use std::fs;
-use std::ffi::OsStr;
 use std::io::{self, ErrorKind};
 use std::mem::MaybeUninit;
 #[cfg(feature = "fdstore")]
@@ -230,10 +230,7 @@ pub unsafe fn notify_and_unset_env(state: &[NotifyState]) -> io::Result<()> {
 /// let _ = sd_notify::notify_with_fds(&[NotifyState::FdStore], &[fd]);
 /// ```
 #[cfg(feature = "fdstore")]
-pub fn notify_with_fds(
-    state: &[NotifyState],
-    fds: &[BorrowedFd<'_>],
-) -> io::Result<()> {
+pub fn notify_with_fds(state: &[NotifyState], fds: &[BorrowedFd<'_>]) -> io::Result<()> {
     use sendfd::SendWithFd;
 
     let Some(socket_path) = env::var_os(NOTIFY_SOCKET) else {
@@ -405,7 +402,8 @@ pub fn listen_fds_with_names() -> io::Result<impl ExactSizeIterator<Item = (RawF
 /// preconditions. See its safety documentation for more details. It can only
 /// be safely called before threads are spawned, in particular before any
 /// `tokio` runtime initialization or `#[tokio::main]`.
-pub unsafe fn listen_fds_with_names_and_unset_env() -> io::Result<impl ExactSizeIterator<Item = (RawFd, String)>> {
+pub unsafe fn listen_fds_with_names_and_unset_env(
+) -> io::Result<impl ExactSizeIterator<Item = (RawFd, String)>> {
     let result = listen_fds_with_names();
     unsafe {
         env::remove_var(LISTEN_PID);

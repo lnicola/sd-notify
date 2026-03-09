@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0] - 2025-01-18
+
+### Changed
+
+ - (breaking) the `unset_env` parameters were split off into separate unsafe functions
+ - (breaking) `watchdog_enabled` now returns `Option<Duration>`
+
 ## [0.4.5] - 2025-01-18
 
 ### Fixed
