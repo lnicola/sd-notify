@@ -14,7 +14,7 @@ A lightweight crate for sending `systemd` service state notifications.
 ## Quick start
 
 ```rust
-let _ = sd_notify::notify(true, &[NotifyState::Ready]);
+let _ = sd_notify::notify(&[NotifyState::Ready]);
 ```
 
 ## Releases
