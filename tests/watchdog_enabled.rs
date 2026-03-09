@@ -3,6 +3,7 @@
 
 use std::env;
 use std::process;
+use std::time::Duration;
 
 #[test]
 fn watchdog_enabled() {
@@ -14,11 +15,9 @@ fn watchdog_enabled() {
         env::set_var("WATCHDOG_PID", "1");
     }
 
-    let mut usec = 0;
     unsafe {
-        assert!(!sd_notify::watchdog_enabled_and_unset_env(&mut usec));
+        assert_eq!(sd_notify::watchdog_enabled_and_unset_env(), None);
     }
-    assert_eq!(usec, 0);
 
     assert!(env::var_os("WATCHDOG_USEC").is_none());
     assert!(env::var_os("WATCHDOG_PID").is_none());
@@ -29,19 +28,15 @@ fn watchdog_enabled() {
         env::set_var("WATCHDOG_PID", process::id().to_string());
     }
 
-    let mut usec = 0;
     unsafe {
-        assert!(!sd_notify::watchdog_enabled_and_unset_env(&mut usec));
+        assert_eq!(sd_notify::watchdog_enabled_and_unset_env(), None);
     }
-    assert_eq!(usec, 0);
 
     assert!(env::var_os("WATCHDOG_USEC").is_none());
     assert!(env::var_os("WATCHDOG_PID").is_none());
 
     // no usec, no pip no unset env
-    let mut usec = 0;
-    assert!(!sd_notify::watchdog_enabled(&mut usec));
-    assert_eq!(usec, 0);
+    assert_eq!(sd_notify::watchdog_enabled(), None);
 
     assert!(env::var_os("WATCHDOG_USEC").is_none());
     assert!(env::var_os("WATCHDOG_PID").is_none());
@@ -52,9 +47,7 @@ fn watchdog_enabled() {
         env::set_var("WATCHDOG_PID", process::id().to_string());
     }
 
-    let mut usec = 0;
-    assert!(sd_notify::watchdog_enabled(&mut usec));
-    assert_eq!(usec, 5);
+    assert_eq!(sd_notify::watchdog_enabled(), Some(Duration::from_micros(5)));
     assert!(env::var_os("WATCHDOG_USEC").is_some());
     assert!(env::var_os("WATCHDOG_PID").is_some());
 }
